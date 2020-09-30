@@ -15,52 +15,52 @@ limitations under the License.
 --]]
 
 local System = System
+local toString = System.toString
 
-local io = io
-local stdin = io.stdin
-local stdout = io.stdout
-local read = stdin.read
-local write = stdout.write
+local print = print
 local select = select
 local string = string
 local byte = string.byte
 local char = string.char
+local Format = string.Format
 
-local Console = {}
-
-function Console.Read()
-  local ch = read(stdin, 1)
-  return byte(ch)
-end
-
-function Console.ReadLine()
-  return read(stdin)
-end
-
-function Console.Write(v, ...)
+local function getWriteValue(v, ...)
   if select("#", ...) ~= 0 then
-    v = v:Format(...)
-  else
-    v = v:ToString()      
+    return Format(v, ...)
   end
-  write(stdout, v)     
+  return toString(v)
 end
 
-function Console.WriteChar(v)
-  write(stdout, char(v))     
-end
-
-function Console.WriteLine(v, ...)
-  if select("#", ...) ~= 0 then
-    v = v:Format(...)
-  else
-    v = v:ToString()      
+local Console = System.define("System.Console", {
+  WriteLine = function (v, ...)
+    print(getWriteValue(v, ...))     
+  end,
+  WriteLineChar = function (v)
+    print(char(v))     
   end
-  write(stdout, v, "\n")     
-end
+})
 
-function Console.WriteLineChar(v)
-  write(stdout, char(v), "\n")     
-end
+local io = io
+if io then
+  local stdin = io.stdin
+  local stdout = io.stdout
+  local read = stdin.read
+  local write = stdout.write
 
-System.define("System.Console", Console)
+  function Console.Read()
+    local ch = read(stdin, 1)
+    return byte(ch)
+  end
+
+  function Console.ReadLine()
+     return read(stdin)
+  end
+
+  function Console.Write(v, ...)
+    write(stdout, getWriteValue(v, ...))
+  end
+
+  function Console.WriteChar(v)
+     write(stdout, char(v))
+  end
+end

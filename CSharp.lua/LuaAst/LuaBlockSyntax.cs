@@ -22,28 +22,44 @@ using System.Threading.Tasks;
 
 namespace CSharpLua.LuaAst {
   public class LuaBlockSyntax : LuaStatementSyntax {
-    public string OpenBraceToken { get; set; }
-    public string CloseBraceToken { get; set; }
-    public LuaSyntaxList<LuaStatementSyntax> Statements { get; } = new LuaSyntaxList<LuaStatementSyntax>();
+    public string OpenToken { get; set; }
+    public string CloseToken { get; set; }
+    public readonly LuaSyntaxList<LuaStatementSyntax> Statements = new LuaSyntaxList<LuaStatementSyntax>();
+    private LuaLocalAreaSyntax headVariables_;
+
+    public int TempCount;
+    public List<int> UsingDeclarations;
+    public bool HasUsingDeclarations => UsingDeclarations != null;
+
+    internal void AddHeadVariable(LuaIdentifierNameSyntax name) {
+      if (headVariables_ == null) {
+        headVariables_ = new LuaLocalAreaSyntax();
+        Statements.Insert(0, headVariables_);
+      }
+      headVariables_.Variables.Add(name);
+    }
+
+    internal void AddStatement(LuaStatementSyntax statement) {
+      Statements.Add(statement);
+    }
+
+    internal void AddStatements(IEnumerable<LuaExpressionSyntax> expressions) {
+      Statements.AddRange(expressions.Select(i => new LuaExpressionStatementSyntax(i)));
+    }
+
+    internal void AddStatements(IEnumerable<LuaStatementSyntax> statements) {
+      Statements.AddRange(statements);
+    }
 
     internal override void Render(LuaRenderer renderer) {
       renderer.Render(this);
-    }
-
-    internal void AddLocalArea(LuaIdentifierNameSyntax name) {
-      var localArea = Statements.FirstOrDefault() as LuaLocalAreaSyntax;
-      if (localArea == null) {
-        localArea = new LuaLocalAreaSyntax();
-        Statements.Insert(0, localArea);
-      }
-      localArea.Variables.Add(name);
     }
   }
 
   public sealed class LuaBlockStatementSyntax : LuaBlockSyntax {
     public LuaBlockStatementSyntax() {
-      OpenBraceToken = Tokens.Do;
-      CloseBraceToken = Tokens.End;
+      OpenToken = Tokens.Do;
+      CloseToken = Tokens.End;
     }
 
     internal override void Render(LuaRenderer renderer) {

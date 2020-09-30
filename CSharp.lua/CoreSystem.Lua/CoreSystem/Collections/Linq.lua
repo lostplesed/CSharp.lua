@@ -15,46 +15,59 @@ limitations under the License.
 --]]
 
 local System = System
+local define = System.define
 local throw = System.throw
 local each = System.each
 local identityFn = System.identityFn
-local Collection = System.Collection
-local wrap = Collection.wrap
-local unWrap = Collection.unWrap
-local sort = Collection.sort
+local wrap = System.wrap
+local unWrap = System.unWrap
 local is = System.is
 local cast = System.cast
+local Int32 = System.Int32
+local isArrayLike = System.isArrayLike
+local isDictLike = System.isDictLike
+local Array = System.Array
+local arrayEnumerator = Array.GetEnumerator
+
 local NullReferenceException = System.NullReferenceException
 local ArgumentNullException = System.ArgumentNullException
 local ArgumentOutOfRangeException = System.ArgumentOutOfRangeException
 local InvalidOperationException = System.InvalidOperationException
-local EqualityComparer_1 = System.EqualityComparer_1
+local EqualityComparer = System.EqualityComparer
 local Comparer_1 = System.Comparer_1
-local IEnumerable_1 = System.IEnumerable_1
 local Empty = System.Array.Empty
 
-local select = select
-local tinsert = table.insert
+local IEnumerable_1 = System.IEnumerable_1
+local IEnumerable = System.IEnumerable
+local IEnumerator_1 = System.IEnumerator_1
+local IEnumerator = System.IEnumerator
+
+local assert = assert
 local getmetatable = getmetatable
+local setmetatable = setmetatable
+local select = select
+local pairs = pairs
+local tsort = table.sort
 
-local InternalEnumerable = System.define("System.Linq.InternalEnumerable", {
-  __inherits__ = { System.IEnumerable }
-})
+local InternalEnumerable = define("System.Linq.InternalEnumerable", function(T) 
+  return {
+    base = { IEnumerable_1(T) }
+  }
+end)
 
-local function createInternal(T, GetEnumerator)
+local function createEnumerable(T, GetEnumerator)
   assert(T)
-  return setmetatable({ __genericT__ = T, GetEnumerator = GetEnumerator }, InternalEnumerable)
+  return setmetatable({ __genericT__ = T, GetEnumerator = GetEnumerator }, InternalEnumerable(T))
 end
 
-local function create(source, GetEnumerator)
-  return createInternal(source.__genericT__, GetEnumerator)
-end 
+local InternalEnumerator = define("System.Linq.InternalEnumerator", function(T) 
+  return {
+    base = { IEnumerator_1(T) }
+  }
+end)
 
-local InternalEnumerator = System.define("System.Linq.InternalEnumerator", {
-  __inherits__ = { System.IEnumerator }
-})
-
-local function IEnumerator(source, tryGetNext, init)
+local function createEnumerator(T, source, tryGetNext, init)
+  assert(T)
   local state = 1
   local current
   local en
@@ -84,20 +97,21 @@ local function IEnumerator(source, tryGetNext, init)
        return false
     end,
     getCurrent = function()
-        return current
+      return current
     end
-  }, InternalEnumerator)
+  }, InternalEnumerator(T))
 end
 
 local Enumerable = {}
-System.define("System.Linq.Enumerable", Enumerable)
+define("System.Linq.Enumerable", Enumerable)
 
 function Enumerable.Where(source, predicate)
   if source == nil then throw(ArgumentNullException("source")) end
   if predicate == nil then throw(ArgumentNullException("predicate")) end
-  return create(source, function() 
+  local T = source.__genericT__
+  return createEnumerable(T, function() 
     local index = -1
-    return IEnumerator(source, function(en)
+    return createEnumerator(T, source, function(en)
       while en:MoveNext() do
         local current = en:getCurrent()
         index = index + 1
@@ -113,9 +127,9 @@ end
 function Enumerable.Select(source, selector, T)
   if source == nil then throw(ArgumentNullException("source")) end
   if selector == nil then throw(ArgumentNullException("selector")) end
-  return createInternal(T, function()
+  return createEnumerable(T, function()
     local index = -1
-    return IEnumerator(source, function(en) 
+    return createEnumerator(T, source, function(en) 
       if en:MoveNext() then
         index = index + 1
         return true, selector(en:getCurrent(), index)
@@ -129,10 +143,10 @@ local function selectMany(source, collectionSelector, resultSelector, T)
   if source == nil then throw(ArgumentNullException("source")) end
   if collectionSelector == nil then throw(ArgumentNullException("collectionSelector")) end
   if resultSelector == nil then throw(ArgumentNullException("resultSelector")) end
-  return createInternal(T, function() 
+  return createEnumerable(T, function() 
     local element, midEn
     local index = -1
-    return IEnumerator(source, function(en) 
+    return createEnumerator(T, source, function(en) 
       while true do
         if midEn and midEn:MoveNext() then
           return true, resultSelector(element, midEn:getCurrent())
@@ -151,15 +165,15 @@ local function selectMany(source, collectionSelector, resultSelector, T)
   end)
 end
 
-function Enumerable.SelectMany(source, ...)
-  local function identityFn(s, x)
-    return x
-  end
+local function identityFnOfSelectMany(s, x)
+  return x
+end
 
+function Enumerable.SelectMany(source, ...)
   local len = select("#", ...)
   if len == 2 then
     local collectionSelector, T = ...
-    return selectMany(source, collectionSelector, identityFn, T)
+    return selectMany(source, collectionSelector, identityFnOfSelectMany, T)
   else
     return selectMany(source, ...)
   end
@@ -167,8 +181,9 @@ end
 
 function Enumerable.Take(source, count)
   if source == nil then throw(ArgumentNullException("source")) end
-  return create(source, function()
-    return IEnumerator(source, function(en)
+  local T = source.__genericT__
+  return createEnumerable(T, function()
+    return createEnumerator(T, source, function(en)
       if count > 0 then
         if en:MoveNext() then
           count = count - 1
@@ -183,9 +198,10 @@ end
 function Enumerable.TakeWhile(source, predicate)
   if source == nil then throw(ArgumentNullException("source")) end
   if predicate == nil then throw(ArgumentNullException("predicate")) end
-  return create(source, function()
+  local T = source.__genericT__
+  return createEnumerable(T, function()
     local index = -1
-    return IEnumerator(source, function(en)
+    return createEnumerator(T, source, function(en)
       if en:MoveNext() then
         local current = en:getCurrent()
         index = index + 1
@@ -201,8 +217,9 @@ end
 
 function Enumerable.Skip(source, count)
   if source == nil then throw(ArgumentNullException("source")) end
-  return create(source, function()
-    return IEnumerator(source, function(en)
+  local T = source.__genericT__
+  return createEnumerable(T, function()
+    return createEnumerator(T, source, function(en)
       while count > 0 and en:MoveNext() do count = count - 1 end
       if count <= 0 then
         if en:MoveNext() then
@@ -217,10 +234,11 @@ end
 function Enumerable.SkipWhile(source, predicate)
   if source == nil then throw(ArgumentNullException("source")) end
   if predicate == nil then throw(ArgumentNullException("predicate")) end
-  return create(source, function()
+  local T = source.__genericT__
+  return createEnumerable(T, function()
     local index = -1
     local isSkipEnd = false
-    return IEnumerator(source, function(en)
+    return createEnumerator(T, source, function(en)
       while not isSkipEnd do
         if en:MoveNext() then
           local current = en:getCurrent()
@@ -241,37 +259,55 @@ function Enumerable.SkipWhile(source, predicate)
   end)
 end
 
-local Lookup = {}
-function Lookup.__ctor__(this, comparer)
-  this.comparer = comparer or EqualityComparer_1(this.__genericTKey__).getDefault()
-  this.groups = {}
-  this.count = 0
-end
+local IGrouping = System.defInf("System.Linq.IGrouping_2", function (TKey, TElement)
+  return {
+    base = { IEnumerable_1(TElement) } 
+  }
+end)
+
+local Grouping = define("System.Linq.Grouping", function (TKey, TElement)
+  return {
+    __genericT__ = TElement,
+    base = { IGrouping(TKey, TElement) },
+    GetEnumerator = arrayEnumerator,
+    getKey = function (this)
+      return this.key
+    end,
+    getCount = function (this)
+      return #this
+    end
+  }
+end)
 
 local function getGrouping(this, key)
-  local hashCode = this.comparer.GetHashCode(key)
-  return this.groups[hashCode]
+  local hashCode = this.comparer:GetHashCodeOf(key)
+  local groupIndex = this.indexs[hashCode]
+  return this.groups[groupIndex]
 end
 
-function Lookup.get(this, key)
-  local grouping = getGrouping(this, key)
-  if grouping ~= nil then return grouping end 
-  return Empty(this.__genericTElement__)
-end
+local Lookup = {
+  __ctor__ = function (this, comparer)
+    this.comparer = comparer or EqualityComparer(this.__genericTKey__).getDefault()
+    this.groups = {}
+    this.indexs = {}
+  end,
+  get = function (this, key)
+    local grouping = getGrouping(this, key)
+    if grouping ~= nil then return grouping end 
+    return Empty(this.__genericTElement__)
+  end,
+  GetCount = function (this)
+    return #this.groups
+  end,
+  Contains = function (this, key)
+    return getGrouping(this, key) ~= nil
+  end,
+  GetEnumerator = function (this)
+    return arrayEnumerator(this.groups, IGrouping)
+  end
+}
 
-function Lookup.GetCount(this)
-  return this.count
-end
-
-function Lookup.Contains(this, key)
-  return getGrouping(this, key) ~= nil
-end
-
-function Lookup.GetEnumerator(this)
-  return Collection.dictionaryEnumerator(this.groups, 2)
-end
-
-local LookupFn = System.define("System.Linq.Lookup", function(TKey, TElement)
+local LookupFn = define("System.Linq.Lookup", function(TKey, TElement)
   local cls = {
     __genericTKey__ = TKey,
     __genericTElement__ = TElement,
@@ -279,31 +315,20 @@ local LookupFn = System.define("System.Linq.Lookup", function(TKey, TElement)
   return cls
 end, Lookup)
 
-local IGrouping = System.defInf("System.Linq.IGrouping")
-
-local Grouping = {}
-Grouping.GetEnumerator = Collection.arrayEnumerator 
-
-function Grouping.getKey(this)
-  return this.key
-end
-
-function Grouping.getCount(this)
-  return #this
-end
-
-Grouping.__inherits__ = { IGrouping }
-System.define("System.Linq.Grouping", Grouping)
-
 local function addToLookup(this, key, value)
-  local hashCode = this.comparer.GetHashCode(key)
-  local group = this.groups[hashCode]
-  if group == nil then
-    group = setmetatable({ key = key, __genericT__ = this.__genericTElement__ }, Grouping)
-    this.groups[hashCode] = group        
-    this.count = this.count + 1
+  local hashCode = this.comparer:GetHashCodeOf(key)
+  local groupIndex = this.indexs[hashCode]
+  local group
+  if groupIndex == nil then
+	  groupIndex = #this.groups + 1
+	  this.indexs[hashCode] = groupIndex
+	  group = setmetatable({ key = key }, Grouping(this.__genericTKey__, this.__genericTElement__))
+	  this.groups[groupIndex] = group
+  else
+	  group = this.groups[groupIndex]
+	  assert(group)
   end
-  tinsert(group, wrap(value))
+  group[#group + 1] = wrap(value)
 end
 
 local function createLookup(source, keySelector, elementSelector, comparer, TKey, TElement)
@@ -332,9 +357,9 @@ function Enumerable.Join(outer, inner, outerKeySelector, innerKeySelector, resul
   if innerKeySelector == nil then throw(ArgumentNullException("innerKeySelector")) end
   if resultSelector == nil then throw(ArgumentNullException("resultSelector")) end
   local lookup = createLookupForJoin(inner, innerKeySelector, comparer, TKey, inner.__genericT__)
-  return createInternal(TResult, function ()
+  return createEnumerable(TResult, function ()
     local item, grouping, index
-    return IEnumerator(outer, function (en)
+    return createEnumerator(TResult, outer, function (en)
       while true do
         if grouping ~= nil then
           index = index + 1
@@ -359,8 +384,8 @@ function Enumerable.GroupJoin(outer, inner, outerKeySelector, innerKeySelector, 
   if innerKeySelector == nil then throw(ArgumentNullException("innerKeySelector")) end
   if resultSelector == nil then throw(ArgumentNullException("resultSelector")) end
   local lookup = createLookupForJoin(inner, innerKeySelector, comparer, TKey, inner.__genericT__)
-  return createInternal(TResult, function ()
-    return IEnumerable(outer, function (en)
+  return createEnumerable(TResult, function ()
+    return createEnumerator(TResult, outer, function (en)
       if en:MoveNext() then
         local item = en:getCurrent()
         return true, resultSelector(item, lookup:get(outerKeySelector(item)))
@@ -370,12 +395,12 @@ function Enumerable.GroupJoin(outer, inner, outerKeySelector, innerKeySelector, 
   end)
 end
 
-
 local function ordered(source, compare)
-  local orderedEnumerable = create(source, function()
+  local T = source.__genericT__
+  local orderedEnumerable = createEnumerable(T, function()
     local t = {}
     local index = 0
-    return IEnumerator(source, function() 
+    return createEnumerator(T, source, function() 
       index = index + 1
       local v = t[index]
       if v ~= nil then
@@ -384,10 +409,23 @@ local function ordered(source, compare)
       return false
     end, 
     function() 
-      for _, v in each(source) do
-        tinsert(t, wrap(v))
-      end  
-      sort(t, compare)
+      local count = 1
+      if isDictLike(source) then
+        for k, v in pairs(source) do
+          t[count] = setmetatable({ Key = k, Value = v }, T)
+          count = count + 1
+        end
+      else
+        for _, v in each(source) do
+          t[count] = wrap(v)
+          count = count + 1
+        end
+      end
+      if count > 1 then
+        tsort(t, function(x, y)
+          return compare(unWrap(x), unWrap(y)) < 0 
+        end)
+      end
     end)
   end)
   orderedEnumerable.source = source
@@ -399,16 +437,24 @@ local function orderBy(source, keySelector, comparer, TKey, descending)
   if source == nil then throw(ArgumentNullException("source")) end
   if keySelector == nil then throw(ArgumentNullException("keySelector")) end
   if comparer == nil then comparer = Comparer_1(TKey).getDefault() end 
+  local keys = {}
+  local function getKey(t) 
+    local k = keys[t]
+    if k == nil then
+      k = keySelector(t)
+      keys[t] = k
+    end
+    return k
+  end
+  local c = comparer.Compare
   local compare
   if descending then
-    local c = comparer.Compare
     compare = function(x, y)
-      return -c(keySelector(x), keySelector(y))
+      return -c(comparer, getKey(x), getKey(y))
     end
   else
-    local c = comparer.Compare
     compare = function(x, y)
-      return c(keySelector(x), keySelector(y))
+      return c(comparer, getKey(x), getKey(y))
     end
   end
   return ordered(source, compare)
@@ -425,27 +471,35 @@ end
 local function thenBy(source, keySelector, comparer, TKey, descending)
   if source == nil then throw(ArgumentNullException("source")) end
   if keySelector == nil then throw(ArgumentNullException("keySelector")) end
-  if comparer == nil then comparer = Comparer_1(TKey).getDefault() end 
+  if comparer == nil then comparer = Comparer_1(TKey).getDefault() end
+  local keys = {}
+  local function getKey(t) 
+    local k = keys[t]
+    if k == nil then
+      k = keySelector(t)
+      keys[t] = k
+    end
+    return k
+  end
+  local c = comparer.Compare
   local compare
   local parentSource, parentCompare = source.source, source.compare
   if descending then
-    local c = comparer.Compare
     compare = function(x, y)
       local v = parentCompare(x, y)
       if v ~= 0 then
         return v
       else
-        return -c(keySelector(x), keySelector(y))
+        return -c(comparer, getKey(x), getKey(y))
       end
     end
   else
-    local c = comparer.Compare
     compare = function(x, y)
       local v = parentCompare(x, y)
       if v ~= 0 then
         return v
       else
-        return c(keySelector(x), keySelector(y))
+        return c(comparer, getKey(x), getKey(y))
       end
     end
   end
@@ -464,7 +518,7 @@ local function groupBy(source, keySelector, elementSelector, comparer, TKey, TEl
   if source == nil then throw(ArgumentNullException("source")) end
   if keySelector == nil then throw(ArgumentNullException("keySelector")) end
   if elementSelector == nil then throw(ArgumentNullException("elementSelector")) end
-  return createInternal(IGrouping, function()
+  return createEnumerable(IGrouping, function()
     return createLookup(source, keySelector, elementSelector, comparer, TKey, TElement):GetEnumerator()
   end)
 end
@@ -491,9 +545,9 @@ local function groupBySelect(source, keySelector, elementSelector, resultSelecto
   if keySelector == nil then throw(ArgumentNullException("keySelector")) end
   if elementSelector == nil then throw(ArgumentNullException("elementSelector")) end
   if resultSelector == nil then throw(ArgumentNullException("resultSelector")) end
-  return createInternal(TResult, function()
+  return createEnumerable(TResult, function()
     local lookup = createLookup(source, keySelector, elementSelector, comparer, TKey, TElement)
-    return IEnumerator(lookup, function(en)
+    return createEnumerator(TResult, lookup, function(en)
       if en:MoveNext() then
         local current = en:getCurrent()
         return resultSelector(current.key, current)
@@ -522,9 +576,10 @@ end
 function Enumerable.Concat(first, second)
   if first == nil then throw(ArgumentNullException("first")) end
   if second == nil then throw(ArgumentNullException("second")) end
-  return create(first, function()
+  local T = first.__genericT__
+  return createEnumerable(T, function()
     local secondEn
-    return IEnumerator(first, function(en)
+    return createEnumerator(T, first, function(en)
       if secondEn == nil then
         if en:MoveNext() then
           return true, en:getCurrent()
@@ -543,9 +598,9 @@ function Enumerable.Zip(first, second, resultSelector, TResult)
   if first == nil then throw(ArgumentNullException("first")) end
   if second == nil then throw(ArgumentNullException("second")) end
   if resultSelector == nil then throw(ArgumentNullException("resultSelector")) end
-  return createInternal(TResult, function()
+  return createEnumerable(TResult, function()
     local e2
-    return IEnumerator(first, function(e1)
+    return createEnumerator(TResult, first, function(e1)
       if e1:MoveNext() and e2:MoveNext() then
           return true, resultSelector(e1:getCurrent(), e2:getCurrent())
       end
@@ -556,8 +611,8 @@ function Enumerable.Zip(first, second, resultSelector, TResult)
   end)
 end
 
-local function addToSet(set, v, getHashCode)
-  local hashCode = getHashCode(v)
+local function addToSet(set, v, getHashCode, comparer)
+  local hashCode = getHashCode(comparer, v)
   if set[hashCode] == nil then
     set[hashCode] = true
     return true
@@ -565,8 +620,8 @@ local function addToSet(set, v, getHashCode)
   return false
 end
 
-local function removeFromSet(set, v, getHashCode)
-  local hashCode = getHashCode(v)
+local function removeFromSet(set, v, getHashCode, comparer)
+  local hashCode = getHashCode(comparer, v)
   if set[hashCode] ~= nil then
     set[hashCode] = nil
     return true
@@ -575,18 +630,20 @@ local function removeFromSet(set, v, getHashCode)
 end
 
 local function getComparer(source, comparer)
-  return comparer or EqualityComparer_1(source.__genericT__).getDefault()
+  return comparer or EqualityComparer(source.__genericT__).getDefault()
 end
 
 function Enumerable.Distinct(source, comparer)
   if source == nil then throw(ArgumentNullException("source")) end
-  return create(source, function()
+  local T = source.__genericT__
+  return createEnumerable(T, function()
     local set = {}
-    local getHashCode = getComparer(source, comparer).GetHashCode
-    return IEnumerator(source, function(en)
+    comparer = getComparer(source, comparer)
+    local getHashCode = comparer.GetHashCodeOf
+    return createEnumerator(T, source, function(en)
       while en:MoveNext() do
         local current = en:getCurrent()
-        if addToSet(set, current, getHashCode) then
+        if addToSet(set, current, getHashCode, comparer) then
           return true, current  
         end
       end
@@ -598,15 +655,17 @@ end
 function Enumerable.Union(first, second, comparer)
   if first == nil then throw(ArgumentNullException("first")) end
   if second == nil then throw(ArgumentNullException("second")) end
-  return create(first, function()
+  local T = first.__genericT__
+  return createEnumerable(T, function()
     local set = {}
-    local getHashCode = getComparer(first, comparer).GetHashCode
+    comparer = getComparer(first, comparer)
+    local getHashCode = comparer.GetHashCodeOf
     local secondEn
-    return IEnumerator(first, function(en)
+    return createEnumerator(T, first, function(en)
       if secondEn == nil then
         while en:MoveNext() do
           local current = en:getCurrent()
-          if addToSet(set, current, getHashCode) then
+          if addToSet(set, current, getHashCode, comparer) then
             return true, current  
           end
         end
@@ -614,7 +673,7 @@ function Enumerable.Union(first, second, comparer)
       end
       while secondEn:MoveNext() do
         local current = secondEn:getCurrent()
-        if addToSet(set, current, getHashCode) then
+        if addToSet(set, current, getHashCode, comparer) then
           return true, current  
         end
       end
@@ -626,13 +685,15 @@ end
 function Enumerable.Intersect(first, second, comparer)
   if first == nil then throw(ArgumentNullException("first")) end
   if second == nil then throw(ArgumentNullException("second")) end
-  return create(source, function()
+  local T = first.__genericT__
+  return createEnumerable(T, function()
     local set = {}
-    local getHashCode = getComparer(first, comparer).GetHashCode
-    return IEnumerator(first, function(en)
+    comparer = getComparer(first, comparer)
+    local getHashCode = comparer.GetHashCodeOf
+    return createEnumerator(T, first, function(en)
       while en:MoveNext() do
         local current = en:getCurrent()
-        if removeFromSet(set, current, getHashCode) then
+        if removeFromSet(set, current, getHashCode, comparer) then
           return true, current
         end
       end
@@ -640,7 +701,7 @@ function Enumerable.Intersect(first, second, comparer)
     end,
     function()
       for _, v in each(second) do
-        addToSet(set, v, getHashCode)
+        addToSet(set, v, getHashCode, comparer)
       end
     end)
   end) 
@@ -649,13 +710,15 @@ end
 function Enumerable.Except(first, second, comparer)
   if first == nil then throw(ArgumentNullException("first")) end
   if second == nil then throw(ArgumentNullException("second")) end
-  return create(first, function()
+  local T = first.__genericT__
+  return createEnumerable(T, function()
     local set = {}
-    local getHashCode = getComparer(first, comparer).GetHashCode
-    return IEnumerator(first, function(en) 
+    comparer = getComparer(first, comparer)
+    local getHashCode = comparer.GetHashCodeOf
+    return createEnumerator(T, first, function(en) 
       while en:MoveNext() do
         local current = en:getCurrent()
-        if addToSet(set, current, getHashCode) then
+        if addToSet(set, current, getHashCode, comparer) then
           return true, current  
         end
       end
@@ -663,7 +726,7 @@ function Enumerable.Except(first, second, comparer)
     end,
     function()
       for _, v in each(second) do
-        addToSet(set, v, getHashCode)
+        addToSet(set, v, getHashCode, comparer)
       end
     end)
   end)
@@ -671,21 +734,24 @@ end
 
 function Enumerable.Reverse(source)
   if source == nil then throw(ArgumentNullException("source")) end
-  return create(source, function()
+  local T = source.__genericT__
+  return createEnumerable(T, function()
     local t = {}    
     local index
-    return IEnumerator(nil, function() 
+    return createEnumerator(T, nil, function() 
       if index > 1 then
         index = index - 1
-        return true, unWrap(t[index])
+        return true, t[index]
       end
       return false
-    end, 
-    function() 
+    end,
+    function()
+      local count = 1
       for _, v in each(source) do
-        tinsert(t, wrap(v))
+        t[count] = v
+        count = count + 1
       end  
-      index = #t + 1
+      index = count
     end)
   end)
 end
@@ -693,11 +759,12 @@ end
 function Enumerable.SequenceEqual(first, second, comparer)
   if first == nil then throw(ArgumentNullException("first")) end
   if second == nil then throw(ArgumentNullException("second")) end
-  local equals = getComparer(first, comparer).Equals
+  comparer = getComparer(first, comparer)
+  local equals = comparer.EqualsOf
   local e1 = first:GetEnumerator()
   local e2 = second:GetEnumerator()
   while e1:MoveNext() do
-    if not(e2:MoveNext() and equals(e1:getCurrent(), e2:getCurrent())) then
+    if not(e2:MoveNext() and equals(comparer, e1:getCurrent(), e2:getCurrent())) then
       return false
     end
   end
@@ -707,7 +774,7 @@ function Enumerable.SequenceEqual(first, second, comparer)
   return true
 end
 
-Enumerable.ToArray = Collection.toArray
+Enumerable.ToArray = Array.toArray
 
 function Enumerable.ToList(source)
   return System.List(source.__genericT__)(source)
@@ -763,13 +830,49 @@ function Enumerable.ToLookup(source, ...)
   end
 end
 
+function Enumerable.DefaultIfEmpty(source)
+  if source == nil then throw(ArgumentNullException("source")) end
+  local T = source.__genericT__
+  local state 
+  return createEnumerable(T, function()
+    return createEnumerator(T, source, function(en)
+      if not state then
+        if en:MoveNext() then
+          state = 1
+          return true, en:getCurrent()
+        end
+        state = 2
+        return true, T:default()
+      elseif state == 1 then
+        if en:MoveNext() then
+          return true, en:getCurrent()
+        end
+      end
+      return false
+    end)
+  end)
+end
+
+function Enumerable.OfType(source, T)
+  if source == nil then throw(ArgumentNullException("source")) end
+  return createEnumerable(T, function()
+    return createEnumerator(T, source, function(en) 
+      while en:MoveNext() do
+        local current = en:getCurrent()
+        if is(current, T) then
+          return true, current
+        end
+      end
+      return false
+    end)
+  end)
+end
+
 function Enumerable.Cast(source, T)
   if source == nil then throw(ArgumentNullException("source")) end
-  if is(source, IEnumerable_1(T)) then
-    return source
-  end
-  return createInternal(T, function()
-    return IEnumerator(source, function(en) 
+  if is(source, IEnumerable_1(T)) then return source end
+  return createEnumerable(T, function()
+    return createEnumerator(T, source, function(en) 
       if en:MoveNext() then
         return true, cast(T, en:getCurrent())
       end
@@ -781,10 +884,17 @@ end
 local function first(source, ...)
   if source == nil then throw(ArgumentNullException("source")) end
   local len = select("#", ...)
-  if len == 0 then  
-    local en = source:GetEnumerator()
-    if en:MoveNext() then 
-      return true, en:getCurrent()
+  if len == 0 then
+    if isArrayLike(source) then
+      local count = #source
+      if count > 0 then
+        return true, unWrap(source[1])
+      end
+    else
+      local en = source:GetEnumerator()
+      if en:MoveNext() then 
+        return true, en:getCurrent()
+      end
     end
     return false, 0
   else
@@ -810,20 +920,27 @@ end
 
 function Enumerable.FirstOrDefault(source, ...)
   local ok, result = first(source, ...)
-  return ok and result or source.__genericT__.__default__()
+  return ok and result or source.__genericT__:default()
 end
 
 local function last(source, ...)
   if source == nil then throw(ArgumentNullException("source")) end
   local len = select("#", ...)
   if len == 0 then
-    local en = source:GetEnumerator()
-    if en:MoveNext() then 
-      local result
-      repeat
-        result = en:getCurrent()
-      until not en:MoveNext()
-      return true, result
+    if isArrayLike(source) then
+      local count = #source
+      if count > 0 then
+        return true, unWrap(source[count])
+      end
+    else
+      local en = source:GetEnumerator()
+      if en:MoveNext() then 
+        local result
+        repeat
+          result = en:getCurrent()
+        until not en:MoveNext()
+        return true, result
+      end
     end
     return false, 0
   else
@@ -852,18 +969,27 @@ end
 
 function Enumerable.LastOrDefault(source, ...)
   local ok, result = last(source, ...)
-  return ok and result or source.__genericT__.__default__()
+  return ok and result or source.__genericT__:default()
 end
 
 local function single(source, ...)
   if source == nil then throw(ArgumentNullException("source")) end
   local len = select("#", ...)
   if len == 0 then
-    local en = source:GetEnumerator()
-    if not en:MoveNext() then return false, 0 end
-    local result = en:getCurrent()
-    if not en:MoveNext() then
-      return true, result
+    if isArrayLike(source) then
+      local count = #source
+      if count == 0 then
+        return false, 0
+      elseif count == 1 then
+        return true, unWrap(source[1])
+      end
+    else
+      local en = source:GetEnumerator()
+      if not en:MoveNext() then return false, 0 end
+      local result = en:getCurrent()
+      if not en:MoveNext() then
+        return true, result
+      end
     end
     return false, 1
   else
@@ -895,18 +1021,27 @@ end
 
 function Enumerable.SingleOrDefault(source, ...)
   local ok, result = single(source, ...)
-  return ok and result or source.__genericT__.__default__()
+  return ok and result or source.__genericT__:default()
 end
 
 local function elementAt(source, index)
   if source == nil then throw(ArgumentNullException("source")) end
-  if index < 0 then return false end
-  local en = source:GetEnumerator()
-  while true do
-    if not en:MoveNext() then return false end
-    if index == 0 then return true, en:getCurrent() end
-    index = index - 1
+  if index >= 0 then
+    if isArrayLike(source) then
+      local count = #source
+      if index < count then
+        return true, unWrap(source[index + 1])
+      end
+    else
+      local en = source:GetEnumerator()
+      while true do
+        if not en:MoveNext() then break end
+        if index == 0 then return true, en:getCurrent() end
+        index = index - 1
+      end
+    end
   end
+  return false
 end
 
 function Enumerable.ElementAt(source, index)
@@ -917,14 +1052,14 @@ end
 
 function Enumerable.ElementAtOrDefault(source, index)
   local ok, result = elementAt(source, index)
-  return ok and result or source.__genericT__.__default__()
+  return ok and result or source.__genericT__:default()
 end
 
 function Enumerable.Range(start, count)
   if count < 0 then throw(ArgumentOutOfRangeException("count")) end
-  return createInternal(System.Int, function()
+  return createEnumerable(Int32, function()
     local index = -1
-    return IEnumerator(nil, function()
+    return createEnumerator(Int32, nil, function()
       index = index + 1
       if index < count then
         return true, start + index  
@@ -936,9 +1071,9 @@ end
 
 function Enumerable.Repeat(element, count, T)
   if count < 0 then throw(ArgumentOutOfRangeException("count")) end
-  return createInternal(T, function()
+  return createEnumerable(T, function()
     local index = -1
-    return IEnumerator(nil, function()
+    return createEnumerator(T, nil, function()
       index = index + 1
       if index < count then
         return true, element  
@@ -981,6 +1116,9 @@ function Enumerable.Count(source, ...)
   if source == nil then throw(ArgumentNullException("source")) end
   local len = select("#", ...)
   if len == 0 then
+    if isArrayLike(source) then
+      return #source
+    end
     local count = 0
     local en = source:GetEnumerator()
     while en:MoveNext() do 
@@ -1002,9 +1140,10 @@ end
 
 function Enumerable.Contains(source, value, comparer)
   if source == nil then throw(ArgumentNullException("source")) end
-  local equals = getComparer(source, comparer).Equals
+  comparer = getComparer(source, comparer)
+  local equals = comparer.EqualsOf
   for _, v in each(source) do
-    if equals(v, value) then
+    if equals(comparer, v, value) then
       return true
     end
   end
@@ -1074,12 +1213,13 @@ local function minOrMax(compareFn, source, ...)
     selector, T = ...
     if selector == nil then throw(ArgumentNullException("selector")) end
   end
-  local compare = Comparer_1(T).getDefault().Compare
-  local value = T.__default__()
+  local comparer = Comparer_1(T).getDefault()
+  local compare = comparer.Compare
+  local value = T:default()
   if value == nil then
     for _, x in each(source) do
       x = selector(x)
-      if x ~= nil and (value == nil or compareFn(compare, x, value)) then
+      if x ~= nil and (value == nil or compareFn(compare, comparer, x, value)) then
         value = x
       end 
     end
@@ -1089,7 +1229,7 @@ local function minOrMax(compareFn, source, ...)
     for _, x in each(source) do
       x = selector(x)
       if hasValue then
-        if compareFn(compare, x, value) then
+        if compareFn(compare, comparer, x, value) then
           value = x
         end
       else
@@ -1102,16 +1242,41 @@ local function minOrMax(compareFn, source, ...)
   end
 end
 
+local function minFn(compare, comparer, x, y)
+  return compare(comparer, x, y) < 0
+end
+
 function Enumerable.Min(source, ...)
-  local function minFn(compare, x, y)
-    return compare(x, y) < 0
-  end
   return minOrMax(minFn, source, ...)
 end
 
+local function maxFn(compare, comparer, x, y)
+  return compare(comparer, x, y) > 0
+end
+
 function Enumerable.Max(source, ...)
-  local function maxFn(compare, x, y)
-    return compare(x, y) > 0
-  end
   return minOrMax(maxFn, source, ...)
+end
+
+function Enumerable.Average(source, ...)
+  if source == nil then throw(ArgumentNullException("source")) end
+  local sum, count = 0, 0
+  local len = select("#", ...)
+  if len == 0 then
+    for _, v in each(source) do
+      sum = sum + v
+      count = count + 1
+    end
+  else
+    local selector = ...
+    if selector == nil then throw(ArgumentNullException("selector")) end
+    for _, v in each(source) do
+      sum = sum + selector(v)
+      count = count + 1
+    end
+  end
+  if count > 0 then
+    return sum / count
+  end
+  throw(InvalidOperationException("NoElements"))
 end

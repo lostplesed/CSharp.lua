@@ -15,70 +15,93 @@ limitations under the License.
 --]]
 
 local System = System
+local defInf = System.defInf
 local emptyFn = System.emptyFn
 
-System.defInf("System.IFormattable")
-System.defInf("System.IComparable")
-System.defInf("System.IFormatProvider")
-System.defInf("System.ICloneable")
+local IComparable = defInf("System.IComparable")
+local IFormattable = defInf("System.IFormattable")
+local IConvertible = defInf("System.IConvertible")
+defInf("System.IFormatProvider")
+defInf("System.ICloneable")
 
-System.defInf("System.IComparable_1", emptyFn)
-System.defInf("System.IEquatable_1", emptyFn)
+defInf("System.IComparable_1", emptyFn)
+defInf("System.IEquatable_1", emptyFn)
 
-System.defInf("System.IPromise")
-System.defInf("System.IDisposable")
+defInf("System.IPromise")
+defInf("System.IDisposable")
 
-local IEnumerable = System.defInf("System.IEnumerable")
-local IEnumerator = System.defInf("System.IEnumerator")
+local IEnumerable = defInf("System.IEnumerable")
+local IEnumerator = defInf("System.IEnumerator")
 
-local ICollection = System.defInf("System.ICollection", {
-  __inherits__ = { IEnumerable }
+local ICollection = defInf("System.ICollection", {
+  base = { IEnumerable }
 })
 
-System.defInf("System.IList", {
-  __inherits__ = { ICollection }
+defInf("System.IList", {
+  base = { ICollection }
 })
 
-System.defInf("System.IDictionary", {
-  __inherits__ = { ICollection }
+defInf("System.IDictionary", {
+  base = { ICollection }
 })
 
-System.defInf("System.IEnumerator_1", function(T) 
+defInf("System.IEnumerator_1", function(T) 
   return {
-    __inherits__ = { IEnumerator }
+    base = { IEnumerator }
   }
 end)
 
-local IEnumerable_1 = System.defInf("System.IEnumerable_1", function(T) 
+local IEnumerable_1 = defInf("System.IEnumerable_1", function(T) 
   return {
-    __inherits__ = { IEnumerable }
+    base = { IEnumerable }
   }
 end)
 
-local ICollection_1 = System.defInf("System.ICollection_1", function(T) 
+local ICollection_1 = defInf("System.ICollection_1", function(T) 
   return { 
-    __inherits__ = { IEnumerable_1(T) } 
+    base = { IEnumerable_1(T) } 
   }
 end)
 
-System.defInf('System.IDictionary_2', function(TKey, TValue) 
+local IReadOnlyCollection_1 = defInf("System.IReadOnlyCollection_1", function (T)
+  return { 
+    base = { IEnumerable_1(T) } 
+  }
+end)
+
+defInf("System.IReadOnlyList_1", function (T)
+  return { 
+    base = { IReadOnlyCollection_1(T) } 
+  }
+end)
+
+defInf('System.IDictionary_2', function(TKey, TValue) 
   return {
-    __inherits__ = IEnumerable
+    base = { ICollection_1(System.KeyValuePair(TKey, TValue)) }
   }
 end)
 
-System.defInf("System.IList_1", function(T) 
+defInf("System.IReadOnlyDictionary_2", function(TKey, TValue) 
   return {
-    __inherits__ = { ICollection_1(T) }
+    base = { IReadOnlyCollection_1(System.KeyValuePair(TKey, TValue)) }
   }
 end)
 
-System.defInf("System.ISet_1", function(T) 
+defInf("System.IList_1", function(T) 
   return {
-    __inherits__ = { ICollection_1(T) }
+    base = { ICollection_1(T) }
   }
 end)
 
-System.defInf("System.IComparer_1", emptyFn)
-System.defInf("System.IEqualityComparer")
-System.defInf("System.IEqualityComparer_1", emptyFn)
+defInf("System.ISet_1", function(T) 
+  return {
+    base = { ICollection_1(T) }
+  }
+end)
+
+defInf("System.IComparer")
+defInf("System.IComparer_1", emptyFn)
+defInf("System.IEqualityComparer")
+defInf("System.IEqualityComparer_1", emptyFn)
+
+System.enumMetatable.interface = { IComparable, IFormattable, IConvertible }

@@ -22,40 +22,62 @@ using CSharpLua.LuaAst;
 
 namespace CSharpLua {
   public sealed class LuaRenderer {
-    private LuaSyntaxGenerator generator_;
-    private TextWriter writer_;
+    private readonly LuaSyntaxGenerator generator_;
+    private readonly TextWriter writer_;
     private bool isNewLine_;
     private int indentLevel_;
+    private int singleLineCounter_;
+    private bool IsSingleLine => singleLineCounter_ > 0;
 
     public LuaRenderer(LuaSyntaxGenerator generator, TextWriter writer) {
       generator_ = generator;
       writer_ = writer;
     }
 
-    private LuaSyntaxGenerator.SettingInfo Setting {
+    public LuaSyntaxGenerator.SettingInfo Setting {
       get {
         return generator_.Setting;
       }
     }
 
     private void AddIndent() {
-      ++indentLevel_;
+      if (IsSingleLine) {
+        WriteSpace();
+      } else {
+        ++indentLevel_;
+      }
     }
 
     private void Outdent() {
-      if (indentLevel_ == 0) {
-        throw new InvalidOperationException();
+      if (IsSingleLine) {
+        WriteSpace();
+      } else {
+        if (indentLevel_ == 0) {
+          throw new InvalidOperationException();
+        }
+        --indentLevel_;
       }
-      --indentLevel_;
     }
 
     private void WriteNewLine() {
+      if (IsSingleLine) {
+        return;
+      }
+
       writer_.Write('\n');
       isNewLine_ = true;
     }
 
     private void WriteComma() {
       Write(", ");
+    }
+
+    private void WriteCommaWithoutSpace() {
+      if (IsSingleLine) {
+        WriteComma();
+      } else {
+        Write(",");
+      }
     }
 
     private void WriteSpace() {
@@ -72,9 +94,15 @@ namespace CSharpLua {
       writer_.Write(value);
     }
 
-    private void Write(LuaSyntaxNode.Semicolon semicolonToken) {
+    private void WriteSemicolon(LuaSyntaxNode.Semicolon semicolonToken) {
       if (Setting.HasSemicolon) {
         Write(semicolonToken.ToString());
+      }
+    }
+
+    private void WriteSemicolon(LuaStatementSyntax statement) {
+      if (Setting.HasSemicolon || statement.ForceSemicolon) {
+        Write(statement.SemicolonToken.ToString());
       }
     }
 
@@ -94,7 +122,7 @@ namespace CSharpLua {
 
     internal void Render(LuaExpressionStatementSyntax node) {
       node.Expression.Render(this);
-      Write(node.SemicolonToken);
+      WriteSemicolon(node);
       WriteNewLine();
     }
 
@@ -123,8 +151,7 @@ namespace CSharpLua {
       foreach (LuaSyntaxNode node in list) {
         if (isFirst) {
           isFirst = false;
-        }
-        else {
+        } else {
           WriteComma();
         }
         node.Render(this);
@@ -138,18 +165,19 @@ namespace CSharpLua {
     }
 
     internal void Render(LuaArgumentListSyntax node) {
-      WriteArgumentList(node.OpenParenToken, node.Arguments, node.CloseParenToken);
-    }
-
-    internal void Render(LuaArgumentSyntax node) {
-      node.Expression.Render(this);
+      if (node.IsCallSingleTable) {
+        Contract.Assert(node.Arguments.Count == 1);
+        WriteSpace();
+        node.Arguments.First().Render(this);
+      } else {
+        WriteArgumentList(node.OpenParenToken, node.Arguments, node.CloseParenToken);
+      }
     }
 
     internal void Render(LuaFunctionExpressionSyntax node) {
       Write(node.FunctionKeyword);
       WriteSpace();
       node.ParameterList.Render(this);
-      WriteSpace();
       node.Body.Render(this);
     }
 
@@ -157,17 +185,13 @@ namespace CSharpLua {
       WriteArgumentList(node.OpenParenToken, node.Parameters, node.CloseParenToken);
     }
 
-    internal void Render(LuaParameterSyntax node) {
-      node.Identifier.Render(this);
-    }
-
     internal void Render(LuaBlockSyntax node) {
-      Write(node.OpenBraceToken);
+      Write(node.OpenToken);
       WriteNewLine();
       AddIndent();
       WriteNodes(node.Statements);
       Outdent();
-      Write(node.CloseBraceToken);
+      Write(node.CloseToken);
     }
 
     internal void Render(LuaBlockStatementSyntax node) {
@@ -209,18 +233,20 @@ namespace CSharpLua {
       Write(node.CloseComment);
     }
 
+    internal void Render(LuaNumberLiteralExpressionSyntax node) {
+      Write(node.Text);
+    }
+
     internal void Render(LuaStatementListSyntax node) {
       WriteNodes(node.Statements);
     }
 
-    internal void Render(LuaLocalVariablesStatementSyntax node) {
+    internal void Render(LuaLocalVariablesSyntax node) {
       if (node.Variables.Count > 0) {
         Write(node.LocalKeyword);
         WriteSpace();
         WriteSeparatedSyntaxList(node.Variables);
         node.Initializer?.Render(this);
-        Write(node.SemicolonToken);
-        WriteNewLine();
       }
     }
 
@@ -253,55 +279,53 @@ namespace CSharpLua {
       foreach (var assignment in node.Assignments) {
         if (isFirst) {
           isFirst = false;
-        }
-        else {
-          Write(LuaSyntaxNode.Tokens.Semicolon);
+        } else {
+          WriteSemicolon(LuaSyntaxNode.Tokens.Semicolon);
           WriteSpace();
         }
         assignment.Render(this);
       }
     }
 
-    internal void Render(LuaMultipleReturnStatementSyntax node) {
+    internal void Render(LuaReturnStatementSyntax node) {
       Write(node.ReturnKeyword);
       if (node.Expressions.Count > 0) {
         WriteSpace();
         WriteSeparatedSyntaxList(node.Expressions);
       }
-      Write(node.SemicolonToken);
+      WriteSemicolon(node.SemicolonToken);
       WriteNewLine();
     }
 
-    internal void Render(LuaReturnStatementSyntax node) {
-      Write(node.ReturnKeyword);
-      if (node.Expression != null) {
-        WriteSpace();
-        node.Expression.Render(this);
+    internal void Render(LuaTableExpression node) {
+      if (node.IsSingleLine) {
+        ++singleLineCounter_;
       }
-      Write(node.SemicolonToken);
-      WriteNewLine();
-    }
 
-    internal void Render(LuaTableInitializerExpression node) {
       Write(node.OpenBraceToken);
       if (node.Items.Count > 0) {
         WriteNewLine();
         AddIndent();
+
         bool isFirst = true;
         foreach (var itemNode in node.Items) {
           if (isFirst) {
             isFirst = false;
-          }
-          else {
-            WriteComma();
+          } else {
+            WriteCommaWithoutSpace();
             WriteNewLine();
           }
           itemNode.Render(this);
         }
+
         Outdent();
         WriteNewLine();
       }
       Write(node.CloseBraceToken);
+
+      if (node.IsSingleLine) {
+        --singleLineCounter_;
+      }
     }
 
     internal void Render(LuaSingleTableItemSyntax node) {
@@ -341,22 +365,22 @@ namespace CSharpLua {
     }
 
     internal void Render(LuaLocalDeclarationStatementSyntax node) {
-      node.Declaration.Render(this);
+      if (!node.Declaration.IsEmpty) {
+        node.Declaration.Render(this);
+        WriteSemicolon(node);
+        WriteNewLine();
+      }
     }
 
     internal void Render(LuaVariableListDeclarationSyntax node) {
-      if (node.Variables.Count > 0) {
-        bool isFirst = true;
-        foreach (var variable in node.Variables) {
-          if (isFirst) {
-            isFirst = false;
-          }
-          else {
-            WriteSpace();
-          }
-          variable.Render(this);
+      bool isFirst = true;
+      foreach (var variable in node.Variables) {
+        if (isFirst) {
+          isFirst = false;
+        } else {
+          WriteSpace();
         }
-        WriteNewLine();
+        variable.Render(this);
       }
     }
 
@@ -365,11 +389,11 @@ namespace CSharpLua {
       WriteSpace();
       node.Identifier.Render(this);
       node.Initializer?.Render(this);
-      Write(node.SemicolonToken);
     }
 
     internal void Render(LuaLocalVariableDeclaratorSyntax node) {
       node.Declarator.Render(this);
+      WriteSemicolon(node);
       WriteNewLine();
     }
 
@@ -389,7 +413,7 @@ namespace CSharpLua {
           item.Render(this);
           ++count;
         }
-        Write(node.SemicolonToken);
+        WriteSemicolon(node);
         WriteNewLine();
       }
     }
@@ -408,7 +432,7 @@ namespace CSharpLua {
     }
 
 
-    internal void Render(LuatLocalTupleVariableExpression node) {
+    internal void Render(LuaLocalTupleVariableExpression node) {
       Write(node.LocalKeyword);
       WriteSpace();
       WriteSeparatedSyntaxList(node.Variables);
@@ -504,7 +528,7 @@ namespace CSharpLua {
       Write(node.UntilKeyword);
       WriteSpace();
       node.Condition.Render(this);
-      Write(node.SemicolonToken);
+      WriteSemicolon(node);
       WriteNewLine();
     }
 
@@ -514,13 +538,13 @@ namespace CSharpLua {
 
     internal void Render(LuaBreakStatementSyntax node) {
       Write(node.BreakKeyword);
-      Write(node.SemicolonToken);
+      WriteSemicolon(node.SemicolonToken);
       WriteNewLine();
     }
 
     internal void Render(LuaContinueAdapterStatementSyntax node) {
       node.Assignment.Render(this);
-      node.Break.Render(this);
+      node.Statement.Render(this);
     }
 
     internal void Render(LuaBlankLinesStatement node) {
@@ -551,7 +575,7 @@ namespace CSharpLua {
       Write(node.GotoKeyword);
       WriteSpace();
       node.Identifier.Render(this);
-      Write(node.SemicolonToken);
+      WriteSemicolon(node.SemicolonToken);
       WriteNewLine();
     }
 
@@ -559,7 +583,7 @@ namespace CSharpLua {
       Write(node.PrefixToken);
       node.Identifier.Render(this);
       Write(node.SuffixToken);
-      Write(node.SemicolonToken);
+      WriteSemicolon(node.SemicolonToken);
       WriteNewLine();
       node.Statement?.Render(this);
     }
@@ -567,6 +591,27 @@ namespace CSharpLua {
     internal void Render(LuaGotoCaseAdapterStatement node) {
       node.Assignment.Render(this);
       node.GotoStatement.Render(this);
+    }
+
+    private void WriteWithShortComment(string text) {
+      Write(LuaSyntaxNode.Tokens.ShortComment);
+      WriteSpace();
+      Write(text);
+      WriteNewLine();
+    }
+
+    internal void Render(LuaDocumentStatement node) {
+      WriteNodes(node.Statements);
+    }
+
+    internal void Render(LuaSummaryDocumentStatement node) {
+      foreach (string text in node.Texts) {
+        WriteWithShortComment(text);
+      }
+    }
+
+    internal void Render(LuaLineDocumentStatement node) {
+      WriteWithShortComment(node.Text);
     }
 
     internal void Render(LuaCodeTemplateExpressionSyntax node) {

@@ -23,19 +23,13 @@ using System.Threading.Tasks;
 
 namespace CSharpLua.LuaAst {
   public sealed class LuaMemberAccessExpressionSyntax : LuaExpressionSyntax {
-    public LuaExpressionSyntax Expression { get; }
+    public LuaExpressionSyntax Expression { get; private set; }
     public LuaExpressionSyntax Name { get; }
     public string OperatorToken { get; }
 
     public LuaMemberAccessExpressionSyntax(LuaExpressionSyntax expression, LuaExpressionSyntax name, bool isObjectColon = false) {
-      if (expression == null) {
-        throw new ArgumentNullException(nameof(expression));
-      }
-      if (name == null) {
-        throw new ArgumentNullException(nameof(name));
-      }
-      Expression = expression;
-      Name = name;
+      Expression = expression ?? throw new ArgumentNullException(nameof(expression));
+      Name = name ?? throw new ArgumentNullException(nameof(name));
       OperatorToken = isObjectColon ? Tokens.ObjectColon : Tokens.Dot;
     }
 
@@ -43,6 +37,10 @@ namespace CSharpLua.LuaAst {
       get {
         return OperatorToken == Tokens.ObjectColon;
       }
+    }
+
+    public void UpdateExpression(LuaExpressionSyntax expression) {
+      Expression = expression ?? throw new ArgumentNullException(nameof(expression));
     }
 
     internal override void Render(LuaRenderer renderer) {
@@ -71,6 +69,10 @@ namespace CSharpLua.LuaAst {
       OperatorToken = isObjectColon ? Tokens.ObjectColon : Tokens.Dot;
     }
 
+    public void Update(LuaExpressionSyntax expression) {
+      Expression = expression;
+    }
+
     public bool IsGetOrAdd {
       set {
         Name.IsGetOrAdd = value;
@@ -93,9 +95,10 @@ namespace CSharpLua.LuaAst {
     }
 
     public LuaPropertyAdapterExpressionSyntax GetClone() {
-      LuaPropertyAdapterExpressionSyntax clone = new LuaPropertyAdapterExpressionSyntax(Name.GetClone());
-      clone.Expression = Expression;
-      clone.OperatorToken = OperatorToken;
+      LuaPropertyAdapterExpressionSyntax clone = new LuaPropertyAdapterExpressionSyntax(Name.GetClone()) {
+        Expression = Expression,
+        OperatorToken = OperatorToken,
+      };
       clone.ArgumentList.Arguments.AddRange(ArgumentList.Arguments);
       return clone;
     }

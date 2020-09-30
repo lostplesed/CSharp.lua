@@ -14,12 +14,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-using Microsoft.CodeAnalysis.CSharp;
 using System;
 using System.Collections.Generic;
-using System.IO;
+using System.Globalization;
 using System.Linq;
-using System.Text;
+
+using Microsoft.CodeAnalysis.CSharp;
 
 namespace CSharpLua.LuaAst {
   public abstract class LuaLiteralExpressionSyntax : LuaExpressionSyntax {
@@ -29,7 +29,7 @@ namespace CSharpLua.LuaAst {
   public sealed class LuaIdentifierLiteralExpressionSyntax : LuaLiteralExpressionSyntax {
     public LuaIdentifierNameSyntax Identifier { get; }
 
-    public LuaIdentifierLiteralExpressionSyntax(string text) : this(new LuaIdentifierNameSyntax(text)) {
+    public LuaIdentifierLiteralExpressionSyntax(string text) : this((LuaIdentifierNameSyntax)text) {
     }
 
     public LuaIdentifierLiteralExpressionSyntax(LuaIdentifierNameSyntax identifier) {
@@ -47,8 +47,6 @@ namespace CSharpLua.LuaAst {
     }
 
     public static readonly LuaIdentifierLiteralExpressionSyntax Nil = new LuaIdentifierLiteralExpressionSyntax(LuaIdentifierNameSyntax.Nil);
-    public static readonly LuaIdentifierLiteralExpressionSyntax Zero = new LuaIdentifierLiteralExpressionSyntax("0");
-    public static readonly LuaIdentifierLiteralExpressionSyntax ZeroFloat = new LuaIdentifierLiteralExpressionSyntax("0.0");
     public static readonly LuaIdentifierLiteralExpressionSyntax True = new LuaIdentifierLiteralExpressionSyntax(LuaIdentifierNameSyntax.True);
     public static readonly LuaIdentifierLiteralExpressionSyntax False = new LuaIdentifierLiteralExpressionSyntax(LuaIdentifierNameSyntax.False);
   }
@@ -82,18 +80,34 @@ namespace CSharpLua.LuaAst {
     public string CloseBracket => Tokens.CloseBracket;
 
     public LuaVerbatimStringLiteralExpressionSyntax(string value, bool checkNewLine = true) {
-      const string kCloseBracket = Tokens.CloseBracket;
       char equals = Tokens.Equals[0];
       int count = 0;
       while (true) {
-        string closeToken = kCloseBracket + new string(equals, count) + kCloseBracket;
-        if (!value.Contains(closeToken)) {
-          break;
+        string equalsToken = new string(equals, count);
+        if (value.StartsWith(equalsToken + OpenBracket)) {
+          ++count;
+          continue;
         }
-        ++count;
+
+        if (value.EndsWith(equalsToken + CloseBracket)) {
+          ++count;
+          continue;
+        }
+
+        if (value.Contains(OpenBracket + equalsToken + OpenBracket)) {
+          ++count;
+          continue;
+        }
+
+        if (value.Contains(CloseBracket + equalsToken + CloseBracket)) {
+          ++count;
+          continue;
+        }
+
+        break;
       }
       if (checkNewLine) {
-        if (value[0] == '\n') {
+        if (value.Length > 0 && value[0] == '\n') {
           value = '\n' + value;
         }
       }
@@ -137,6 +151,58 @@ namespace CSharpLua.LuaAst {
 
     private static string GetIdentifierToken(char character) {
       return SyntaxFactory.Literal(character).Text;
+    }
+  }
+
+  public abstract class LuaNumberLiteralExpressionSyntax : LuaLiteralExpressionSyntax {
+    public abstract double Number { get; }
+    public static readonly LuaNumberLiteralExpressionSyntax Zero = 0;
+    public static readonly LuaNumberLiteralExpressionSyntax ZeroFloat = 0.0;
+
+    internal override void Render(LuaRenderer renderer) {
+      renderer.Render(this);
+    }
+
+    public static implicit operator LuaNumberLiteralExpressionSyntax(float number) {
+      return new LuaFloatLiteralExpressionSyntax(number);
+    }
+
+    public static implicit operator LuaNumberLiteralExpressionSyntax(double number) {
+      return new LuaDoubleLiteralExpressionSyntax(number);
+    }
+  }
+
+  public sealed class LuaFloatLiteralExpressionSyntax : LuaNumberLiteralExpressionSyntax {
+    private readonly float number_;
+
+    public LuaFloatLiteralExpressionSyntax(float number) {
+      number_ = number;
+    }
+
+    public override double Number {
+      get {
+        return number_;
+      }
+    }
+
+    public override string Text {
+      get {
+        return number_.ToString("G9", CultureInfo.InvariantCulture);
+      }
+    }
+  }
+
+  public sealed class LuaDoubleLiteralExpressionSyntax : LuaNumberLiteralExpressionSyntax {
+    public override double Number { get;}
+
+    public LuaDoubleLiteralExpressionSyntax(double number) {
+      Number = number;
+    }
+
+    public override string Text {
+      get {
+        return Number.ToString("G17", CultureInfo.InvariantCulture);
+      }
     }
   }
 }

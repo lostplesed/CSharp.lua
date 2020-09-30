@@ -28,8 +28,10 @@ namespace CSharpLua.LuaAst {
     }
 
     public sealed class Semicolon {
+      public const string kSemicolon = ";";
+
       public override string ToString() {
-        return ";";
+        return kSemicolon;
       }
     }
 
@@ -59,19 +61,23 @@ namespace CSharpLua.LuaAst {
       public const string BitAnd = "&";
       public const string BitOr = "|";
       public const string BitXor = "~";
-      public const string LeftShift = "<<";
-      public const string RightShift = ">>";
+      public const string BitNot = "~";
+      public const string ShiftLeft = "<<";
+      public const string ShiftRight = ">>";
       public const string ShortComment = "--";
       public const string OpenLongComment = "--[[";
       public const string CloseLongComment = "--]]";
       public const string OpenDoubleBrace = "[[";
       public const string CloseDoubleBrace = "]]";
+      public const string OpenSummary = "<summary>";
+      public const string CloseSummary = "</summary>";
       public const string Ctor = "ctor";
       public const string This = "this";
       public const string Get = "get";
       public const string Set = "set";
       public const string Add = "add";
       public const string Remove = "remove";
+      public const string Index = "index";
       public const string Label = "::";
       public const string Concatenation = "..";
     }
@@ -104,37 +110,45 @@ namespace CSharpLua.LuaAst {
       public const string While = "while";
     }
 
-    public static string SpecailWord(string s) {
+    public const int kUpvaluesMaxCount = 60;
+    public const int kLocalVariablesMaxCount = 200;
+
+    private static string SpecailWord(string s) {
       return "__" + s + "__";
     }
 
-    public static string[] TempIdentifiers = {
+    public static string GetCtorNameString(int ctorIndex) {
+      Contract.Assert(ctorIndex > 0);
+      return SpecailWord(Tokens.Ctor + ctorIndex);
+    }
+
+    public static readonly string[] TempIdentifiers = {
       "default", "extern", "ref", "out", "try",
       "case", "void", "byte", "char", "uint",
       "lock",  "using", "fixed", "const", "object",
       "internal", "virtual",
     };
 
-    public readonly static HashSet<string> ReservedWords = new HashSet<string>() {
-      //  lua reserved words
-      Keyword.And, Keyword.Break, Keyword.Do, Keyword.Else, Keyword.ElseIf, Keyword.End,
-      Keyword.False, Keyword.For, Keyword.Function, Keyword.Goto, Keyword.If, Keyword.In,
-      Keyword.Local, Keyword.Nil, Keyword.Not, Keyword.Or, Keyword.Repeat, Keyword.Return,
-      Keyword.Then, Keyword.True, Keyword.Until, Keyword.While,
-            
+    private static readonly HashSet<string> ReservedWords = new HashSet<string>() {            
       // compiler reserved words
       "System", "Linq",
     };
 
-    public readonly static HashSet<string> SpecialMethodReservedWords = new HashSet<string>() {
+    static LuaSyntaxNode() {
+      // lua reserved words
+      foreach (var field in typeof(Keyword).GetFields()) {
+        ReservedWords.Add(field.GetRawConstantValue().ToString());
+      }
+    }
+
+    private static readonly HashSet<string> SpecialMethodReservedWords = new HashSet<string>() {
       // lua metatable methods
       "__add", "__sub", "__mul", "__div", "__mod", "__pow", "__umm", "__idiv",
       "__band", "__bor", "__bxor", "__bnot", "__shl", "__shr", "__concat", "__len",
-      "__eq", "__lt", "__le", "__index", "__newindex", "__call",
+      "__eq", "__lt", "__le", "__index", "__newindex", "__call", "__gc",
 
       // adapter special methods 
-      "__name__", "__kind__", "__base__", "__ctor__", "__inherits__",
-      "__interfaces__", "__default__", "__attributes__", "__clone__",
+      "__name__", "__ctor__", "__metadata__", "__clone__",
     };
 
     public static bool IsReservedWord(string identifier) {

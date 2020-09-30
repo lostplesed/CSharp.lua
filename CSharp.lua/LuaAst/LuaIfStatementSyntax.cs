@@ -32,10 +32,7 @@ namespace CSharpLua.LuaAst {
     public string CloseParenToken => Tokens.End;
 
     public LuaIfStatementSyntax(LuaExpressionSyntax condition) {
-      if (condition == null) {
-        throw new ArgumentNullException(nameof(condition));
-      }
-      Condition = condition;
+      Condition = condition ?? throw new ArgumentNullException(nameof(condition));
     }
 
     internal override void Render(LuaRenderer renderer) {
@@ -50,10 +47,7 @@ namespace CSharpLua.LuaAst {
     public readonly LuaBlockSyntax Body = new LuaBlockSyntax();
 
     public LuaElseIfStatementSyntax(LuaExpressionSyntax condition) {
-      if (condition == null) {
-        throw new ArgumentNullException(nameof(condition));
-      }
-      Condition = condition;
+      Condition = condition ?? throw new ArgumentNullException(nameof(condition)); ;
     }
 
     internal override void Render(LuaRenderer renderer) {
@@ -74,7 +68,7 @@ namespace CSharpLua.LuaAst {
     public readonly LuaRepeatStatementSyntax RepeatStatement = new LuaRepeatStatementSyntax(LuaIdentifierNameSyntax.One);
     public LuaIdentifierNameSyntax Temp { get; }
     private LuaBlockSyntax defaultBock_;
-    private LuaLocalVariablesStatementSyntax caseLabelVariables_ = new LuaLocalVariablesStatementSyntax();
+    private readonly LuaLocalVariablesSyntax caseLabelVariables_ = new LuaLocalVariablesSyntax();
     public LuaIdentifierNameSyntax DefaultLabel { get; set; }
     public readonly Dictionary<int, LuaIdentifierNameSyntax> CaseLabels = new Dictionary<int, LuaIdentifierNameSyntax>();
     private LuaIfStatementSyntax headIfStatement_;
@@ -97,18 +91,15 @@ namespace CSharpLua.LuaAst {
 
       LuaIfStatementSyntax ifStatement = null;
       foreach (var section in sections) {
-        LuaIfStatementSyntax statement = section as LuaIfStatementSyntax;
-        if (statement != null) {
+        if (section is LuaIfStatementSyntax statement) {
           if (ifStatement == null) {
             ifStatement = statement;
-          }
-          else {
+          } else {
             LuaElseIfStatementSyntax elseIfStatement = new LuaElseIfStatementSyntax(statement.Condition);
             elseIfStatement.Body.Statements.AddRange(statement.Body.Statements);
             ifStatement.ElseIfStatements.Add(elseIfStatement);
           }
-        }
-        else {
+        } else {
           Contract.Assert(defaultBock_ == null);
           defaultBock_ = (LuaBlockSyntax)section;
         }
@@ -122,8 +113,7 @@ namespace CSharpLua.LuaAst {
           ifStatement.Else = elseClause;
         }
         headIfStatement_ = ifStatement;
-      }
-      else {
+      } else {
         if (defaultBock_ != null) {
           body.Statements.AddRange(defaultBock_.Statements);
         }
@@ -145,8 +135,7 @@ namespace CSharpLua.LuaAst {
     private LuaBlockSyntax FindMatchIfStatement(int index) {
       if (index == 0) {
         return headIfStatement_.Body;
-      }
-      else {
+      } else {
         return headIfStatement_.ElseIfStatements[index - 1].Body;
       }
     }
@@ -172,4 +161,5 @@ namespace CSharpLua.LuaAst {
       renderer.Render(this);
     }
   }
+
 }

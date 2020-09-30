@@ -21,19 +21,39 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace CSharpLua.LuaAst {
-  public sealed class LuaInvocationExpressionSyntax : LuaExpressionSyntax {
-    public LuaArgumentListSyntax ArgumentList { get; } = new LuaArgumentListSyntax();
-    public LuaExpressionSyntax Expression { get; }
+  public sealed class LuaArgumentListSyntax : LuaSyntaxNode {
+    public string OpenParenToken => Tokens.OpenParentheses;
+    public string CloseParenToken => Tokens.CloseParentheses;
+    public readonly LuaSyntaxList<LuaExpressionSyntax> Arguments = new LuaSyntaxList<LuaExpressionSyntax>();
+    public bool IsCallSingleTable { get; set; }
 
-    public LuaInvocationExpressionSyntax(LuaExpressionSyntax expression) {
-      if (expression == null) {
-        throw new ArgumentNullException(nameof(expression));
-      }
-      Expression = expression;
+    public void AddArgument(LuaExpressionSyntax argument) {
+      Arguments.Add(argument);
     }
 
-    public LuaInvocationExpressionSyntax(LuaExpressionSyntax expression, LuaExpressionSyntax argument) : this(expression) {
+    public void AddArguments(IEnumerable<LuaExpressionSyntax> arguments) {
+      foreach (var argument in arguments) {
+        AddArgument(argument);
+      }
+    }
+
+    internal override void Render(LuaRenderer renderer) {
+      renderer.Render(this);
+    }
+  }
+
+  public sealed class LuaInvocationExpressionSyntax : LuaExpressionSyntax {
+    public readonly LuaArgumentListSyntax ArgumentList = new LuaArgumentListSyntax();
+    public LuaExpressionSyntax Expression { get; }
+    public List<LuaExpressionSyntax> Arguments => ArgumentList.Arguments;
+
+    public LuaInvocationExpressionSyntax(LuaExpressionSyntax expression) {
+      Expression = expression ?? throw new ArgumentNullException(nameof(expression));
+    }
+
+    public LuaInvocationExpressionSyntax(LuaExpressionSyntax expression, LuaExpressionSyntax argument, bool isCallSingleTable) : this(expression) {
       AddArgument(argument);
+      ArgumentList.IsCallSingleTable = isCallSingleTable;
     }
 
     public LuaInvocationExpressionSyntax(LuaExpressionSyntax expression, LuaExpressionSyntax argument1, LuaExpressionSyntax argument2) : this(expression) {
